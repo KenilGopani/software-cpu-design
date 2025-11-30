@@ -83,8 +83,8 @@ Three benchmark programs are provided to validate the ISA:
 
 For a deep dive into the microarchitecture, refer to the technical documentation:
 
-  * [**ISA Reference Manual**](https://www.google.com/search?q=docs/isa_specification.md): Detailed bit-level instruction formats.
-  * [**Microarchitecture Schematics**](https://www.google.com/search?q=docs/cpu_schematic.md): Data path diagrams and control logic.
+  * [**ISA Reference Manual**](docs/isa_specification.md): Detailed bit-level instruction formats.
+  * [**Microarchitecture Schematics**](docs/cpu_schematic.md): Data path diagrams and control logic.
 
 <!-- end list -->
 
