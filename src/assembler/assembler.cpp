@@ -1,3 +1,17 @@
+/*
+ * assembler.cpp
+ * 
+ * Two-pass assembler for the 16-bit RISC CPU. Converts assembly language
+ * source code into executable binary machine code.
+ * 
+ * Pass 1: Scans the source to build a symbol table, resolving all label
+ *         addresses by calculating instruction sizes.
+ * 
+ * Pass 2: Generates the actual machine code using the resolved symbols,
+ *         encoding each instruction according to the ISA specification.
+ * 
+ */
+
 #include "assembler.h"
 #include <algorithm>
 #include <cctype>
@@ -7,6 +21,7 @@
 
 Assembler::Assembler() : current_address(0), error_count(0) {}
 
+// Remove leading and trailing whitespace from a string
 std::string Assembler::trim(const std::string &str) {
   size_t start = str.find_first_not_of(" \t\r\n");
   if (start == std::string::npos)
@@ -15,6 +30,7 @@ std::string Assembler::trim(const std::string &str) {
   return str.substr(start, end - start + 1);
 }
 
+// Split a string by delimiter and return non-empty tokens
 std::vector<std::string> Assembler::split(const std::string &str,
                                           char delimiter) {
   std::vector<std::string> tokens;
@@ -29,11 +45,12 @@ std::vector<std::string> Assembler::split(const std::string &str,
   return tokens;
 }
 
+// Parse a single line of assembly code into its components (label, opcode, operands)
 AssemblyLine Assembler::parse_line(const std::string &line, int line_number) {
   AssemblyLine result;
   result.line_number = line_number;
 
-  // Remove comments
+  // Remove comments (everything after semicolon)
   std::string code = line;
   size_t comment_pos = code.find(';');
   if (comment_pos != std::string::npos) {
@@ -75,6 +92,7 @@ AssemblyLine Assembler::parse_line(const std::string &line, int line_number) {
   return result;
 }
 
+// Convert assembly mnemonic to numeric opcode (case-insensitive)
 int Assembler::get_opcode(const std::string &mnemonic) {
   std::string upper = mnemonic;
   std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
@@ -155,10 +173,12 @@ int Assembler::get_opcode(const std::string &mnemonic) {
   return -1; // Unknown opcode
 }
 
+// Parse register operand (e.g., "R0" through "R7")
 bool Assembler::parse_register(const std::string &operand, byte_t &reg) {
   std::string upper = operand;
   std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
 
+  // Check format: 'R' followed by a digit 0-7
   if (upper.length() >= 2 && upper[0] == 'R' && isdigit(upper[1])) {
     int r = upper[1] - '0';
     if (r >= 0 && r < NUM_REGISTERS) {
@@ -169,6 +189,7 @@ bool Assembler::parse_register(const std::string &operand, byte_t &reg) {
   return false;
 }
 
+// Parse immediate value supporting hex (0x), binary (0b), and decimal formats
 bool Assembler::parse_immediate(const std::string &operand, int16_t &value) {
   try {
     // Check for hex (0x prefix)
@@ -193,8 +214,9 @@ bool Assembler::parse_immediate(const std::string &operand, int16_t &value) {
   }
 }
 
+// Resolve address from either a label name or numeric value
 bool Assembler::parse_address(const std::string &operand, addr_t &address) {
-  // Check if it's a label
+  // Check if it's a label defined in the symbol table
   if (symbol_table.find(operand) != symbol_table.end()) {
     address = symbol_table[operand];
     return true;
@@ -210,13 +232,15 @@ bool Assembler::parse_address(const std::string &operand, addr_t &address) {
   return false;
 }
 
+// Write a single byte to the output buffer
 void Assembler::emit_byte(byte_t value) {
   machine_code.push_back(value);
   current_address++;
 }
 
+// Write a 16-bit word in little-endian format
 void Assembler::emit_word(word_t value) {
-  // Little-endian
+  // Little-endian: low byte first, then high byte
   emit_byte((byte_t)(value & 0xFF));
   emit_byte((byte_t)((value >> 8) & 0xFF));
 }
@@ -226,11 +250,12 @@ void Assembler::report_error(int line_number, const std::string &message) {
   error_count++;
 }
 
+// First pass: build symbol table by calculating addresses for all labels
 bool Assembler::first_pass() {
   current_address = PROGRAM_START;
 
   for (const auto &line : lines) {
-    // Add label to symbol table
+    // Record label positions in the symbol table
     if (!line.label.empty()) {
       if (symbol_table.find(line.label) != symbol_table.end()) {
         report_error(line.line_number, "Duplicate label '" + line.label + "'");
@@ -239,7 +264,7 @@ bool Assembler::first_pass() {
       symbol_table[line.label] = current_address;
     }
 
-    // Calculate instruction size
+    // Calculate instruction size to determine next address
     if (!line.opcode.empty()) {
       int opcode = get_opcode(line.opcode);
       if (opcode < 0) {
@@ -247,19 +272,19 @@ bool Assembler::first_pass() {
         return false;
       }
 
-      // Most instructions are 2 bytes
+      // Most instructions are 2 bytes (single word)
       current_address += 2;
 
-      // Some instructions have an additional word for address
+      // Jump, call, and direct memory access instructions need extra word for target address
       if (opcode == OP_LOAD_DIR || opcode == OP_STORE_DIR || opcode == OP_JMP ||
           opcode == OP_JZ || opcode == OP_JNZ || opcode == OP_JC ||
           opcode == OP_JNC || opcode == OP_JN || opcode == OP_CALL) {
         current_address += 2;
       }
-      // Check if LOAD/STORE needs to be direct addressing
+      // Determine if LOAD/STORE uses direct addressing (needs extra address word)
       else if ((opcode == OP_LOAD_IND || opcode == OP_STORE_IND) &&
                !line.operands.empty()) {
-        // If second operand is not [Rx], it's direct addressing
+        // Direct addressing is used when operand lacks brackets (not [Rx] format)
         std::string op =
             line.operands.size() > 1 ? line.operands[1] : line.operands[0];
         if (op.find('[') == std::string::npos) {
@@ -272,6 +297,7 @@ bool Assembler::first_pass() {
   return true;
 }
 
+// Second pass: encode each instruction into machine code
 bool Assembler::encode_instruction(const AssemblyLine &line) {
   int opcode = get_opcode(line.opcode);
   if (opcode < 0) {
@@ -283,7 +309,7 @@ bool Assembler::encode_instruction(const AssemblyLine &line) {
   std::transform(upper_opcode.begin(), upper_opcode.end(), upper_opcode.begin(),
                  ::toupper);
 
-  // Handle different instruction formats
+  // Encode based on instruction format (operand count and types vary)
   if (upper_opcode == "NOP") {
     emit_word(MAKE_INSTR(OP_NOP, 0, 0, 0));
   } else if (upper_opcode == "HALT") {
@@ -335,7 +361,7 @@ bool Assembler::encode_instruction(const AssemblyLine &line) {
     }
 
     std::string src = line.operands[1];
-    // Check for indirect addressing [Rs]
+    // Distinguish between register indirect [Rs] and direct addressing
     if (src.find('[') != std::string::npos) {
       // Remove brackets
       src.erase(std::remove(src.begin(), src.end(), '['), src.end());
@@ -369,7 +395,7 @@ bool Assembler::encode_instruction(const AssemblyLine &line) {
     }
 
     std::string dst = line.operands[1];
-    // Check for indirect addressing [Rd]
+    // Distinguish between register indirect [Rd] and direct addressing
     if (dst.find('[') != std::string::npos) {
       // Remove brackets
       dst.erase(std::remove(dst.begin(), dst.end(), '['), dst.end());
@@ -447,7 +473,7 @@ bool Assembler::encode_instruction(const AssemblyLine &line) {
              upper_opcode == "JNZ" || upper_opcode == "JC" ||
              upper_opcode == "JNC" || upper_opcode == "JN" ||
              upper_opcode == "CALL") {
-    // Branch with address
+    // Control flow instructions that take a target address or label
     if (line.operands.size() != 1) {
       report_error(line.line_number, upper_opcode + " requires 1 operand");
       return false;
@@ -495,6 +521,7 @@ bool Assembler::encode_instruction(const AssemblyLine &line) {
   return true;
 }
 
+// Second pass: generate actual machine code using resolved symbols
 bool Assembler::second_pass() {
   current_address = PROGRAM_START;
   machine_code.clear();
@@ -510,6 +537,7 @@ bool Assembler::second_pass() {
   return true;
 }
 
+// Main assembly process: read source, run two passes, write binary output
 bool Assembler::assemble(const std::string &input_file,
                          const std::string &output_file) {
   // Read input file
