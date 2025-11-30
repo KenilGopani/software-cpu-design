@@ -2,6 +2,11 @@
 
 A complete software implementation of a 16-bit RISC-inspired CPU, including an emulator, assembler, and example programs.
 
+## Demo Video
+
+🎥 **[Watch the Project Demo](https://drive.google.com/file/d/1V4UMlEAp-HYGKQ8p4dvk3qQjVv1UG8QL/view?usp=drive_link)**
+
+
 ## Project Overview
 
 This project implements a fully functional 16-bit CPU in C++ with:
